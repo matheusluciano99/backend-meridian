@@ -5,7 +5,7 @@ import { ProductsRepository } from './products.repository';
 export class ProductsService {
   constructor(private readonly repo: ProductsRepository) {}
 
-  findAll() {
+  async findAll() {
     return this.repo.findAll();
   }
 }

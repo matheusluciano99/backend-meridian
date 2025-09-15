@@ -7,9 +7,18 @@ import { PoliciesModule } from './policies/policies.module';
 import { AnchorsModule } from './anchors/anchors.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { SorobanModule } from './soroban/soroban.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
-  imports: [UsersModule, ProductsModule, PoliciesModule, AnchorsModule, LedgerModule, SorobanModule],
+  imports: [
+    UsersModule,
+    ProductsModule,
+    PoliciesModule,
+    AnchorsModule,
+    LedgerModule,
+    SorobanModule,
+    WebhooksModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

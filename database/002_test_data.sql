@@ -27,7 +27,7 @@ INSERT INTO users (id, email, name, phone, document, wallet_address, kyc_status,
 -- Usuários sem KYC
 ('550e8400-e29b-41d4-a716-446655440007', 'roberto.lima@email.com', 'Roberto Lima', '+5511333333333', '33344455566', 'GSTU333344445555666677778888999900001111', 'pending', NULL),
 ('550e8400-e29b-41d4-a716-446655440008', 'fernanda.alves@email.com', 'Fernanda Alves', '+5511222222222', '22233344455', 'GVWX222233334444555566667777888899990000', 'pending', NULL),
-('550e8400-e29b-41d4-a716-446655440009', 'gabriel.rodrigues@email.com', 'Gabriel Rodrigues', '+5511111111111', '11122233344', 'GYZA111122223333444455556666777788889999', 'pending', NULL),
+('550e8400-e29b-41d4-a716-446655440009', 'gabriel.rodrigues@email.com', 'Gabriel Rodrigues', '+5511111111111', '77788899900', 'GYZA111122223333444455556666777788889999', 'pending', NULL),
 ('550e8400-e29b-41d4-a716-446655440010', 'juliana.moreira@email.com', 'Juliana Moreira', '+5511000000000', '00011122233', 'GZAB000011112222333344445555666677778888', 'pending', NULL);
 
 -- =====================================================

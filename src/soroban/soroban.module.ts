@@ -1,4 +1,8 @@
 import { Module } from '@nestjs/common';
+import { SorobanService } from './soroban.service';
 
-@Module({})
+@Module({
+  providers: [SorobanService],
+  exports: [SorobanService],
+})
 export class SorobanModule {}

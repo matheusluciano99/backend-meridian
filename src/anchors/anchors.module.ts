@@ -10,9 +10,10 @@ import { AnchorAuthService } from './anchor-auth.service';
 import { StellarUtilityService } from './stellar-utility.service';
 import { LedgerRepository } from '../ledger/ledger.repository';
 import { UsersRepository } from '../users/users.repository';
+import { SorobanModule } from '../soroban/soroban.module';
 
 @Module({
-  imports: [HttpModule],
+  imports: [HttpModule, SorobanModule],
   controllers: [AnchorsController],
   providers: [
     AnchorsService,

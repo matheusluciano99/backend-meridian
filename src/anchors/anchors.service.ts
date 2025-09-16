@@ -8,6 +8,8 @@ import { AnchorAuthService } from './anchor-auth.service';
 import { StellarUtilityService } from './stellar-utility.service';
 import { LedgerRepository } from '../ledger/ledger.repository';
 import { UsersRepository } from '../users/users.repository';
+import { SorobanService } from '../soroban/soroban.service';
+import { xlmToStroops } from '../common/stellar-units';
 import { Horizon, TransactionBuilder, Networks, Keypair } from '@stellar/stellar-sdk';
 
 @Injectable()
@@ -21,6 +23,7 @@ export class AnchorsService {
     private readonly stellarUtil: StellarUtilityService,
     private readonly ledgerRepo: LedgerRepository,
     private readonly usersRepo: UsersRepository,
+    private readonly soroban: SorobanService,
   ) {}
 
   async startDeposit(userId: string, amount: number) {
@@ -251,6 +254,20 @@ export class AnchorsService {
     // (Para manter coerência sem mexer no users.repository, fazemos client rápido)
     // TODO: refatorar para UsersRepository método updateBalance
 
+    // Blockchain (Soroban) - best effort; falhas não devem quebrar finalizeDeposit.
+    // Estratégia: usar amount como XLM nativo -> converter para stroops e registrar.
+    const extraUpdates: any = { ...(tx.extra || {}) };
+    try {
+      const stroops = xlmToStroops(tx.amount.toString());
+      const collectRes = await this.soroban.collectPremium(tx.user_id, stroops);
+      extraUpdates.collectPremiumTx = collectRes.txHash;
+      // Produto placeholder MVP e paymentRef = anchorTxId
+      const activateRes = await this.soroban.activatePolicy(tx.user_id, 'DEFAULT_PRODUCT', stroops, `anchor:${tx.id}`);
+      extraUpdates.activatePolicyTx = activateRes.txHash;
+    } catch (chainErr) {
+      extraUpdates.chainError = (chainErr as Error).message;
+    }
+    await this.anchorTxRepo.updateExtra(tx.id, extraUpdates);
     return this.anchorTxRepo.findById(tx.id);
   }
 

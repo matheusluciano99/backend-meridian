@@ -80,4 +80,15 @@ export class AnchorTransactionsRepository {
     if (error) throw error;
     return data;
   }
+
+  async updateExtra(id: string, extra: any) {
+    const { data, error } = await this.supabase
+      .from('anchor_transactions')
+      .update({ extra })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
 }

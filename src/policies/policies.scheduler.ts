@@ -4,6 +4,7 @@ import { SorobanService } from '../soroban/soroban.service';
 import { xlmToStroops } from '../common/stellar-units';
 import { LedgerRepository } from '../ledger/ledger.repository';
 import { PremiumRefsRepository } from './premium-refs.repository';
+import { UsersRepository } from '../users/users.repository';
 
 @Injectable()
 export class PoliciesBillingScheduler {
@@ -12,8 +13,9 @@ export class PoliciesBillingScheduler {
   constructor(
     private readonly policiesRepo: PoliciesRepository,
     private readonly soroban: SorobanService,
-  private readonly ledgerRepo: LedgerRepository,
-  private readonly premiumRefs: PremiumRefsRepository,
+    private readonly ledgerRepo: LedgerRepository,
+    private readonly premiumRefs: PremiumRefsRepository,
+    private readonly usersRepo: UsersRepository,
   ) {
     // Executa a cada 5 minutos
     setInterval(() => {
@@ -40,44 +42,51 @@ export class PoliciesBillingScheduler {
       // Primeiro tenta cobrança on-chain; só depois atualiza DB para evitar divergência
       let txHash: string | undefined;
       let nextCharge: string | undefined;
+      let premiumSkipped = false;
       try {
+        const user = await this.usersRepo.ensureWalletAddress(p.user_id);
+        if (!user?.wallet_address) throw new Error('User wallet missing');
         const amountStroops = xlmToStroops(p.hourly_rate_xlm.toString());
-        const chain = await this.soroban.collectPremiumWithRef(p.user_id, amountStroops, ref);
-        if (!chain || !chain.txHash) {
-          throw new Error('collectPremiumWithRef returned no result/txHash');
-        }
+        const effective = amountStroops <= 0n ? 1n : amountStroops;
+        const chain = await this.soroban.collectPremiumWithRef(user.wallet_address, effective, ref);
+        if (!chain || !chain.txHash) throw new Error('collectPremiumWithRef returned no tx');
         txHash = chain.txHash;
-      } catch (e) {
-        this.logger.warn(`Falha cobrança on-chain policy ${p.id}: ${(e as Error).message}`);
-        continue; // não debita local
+      } catch (e: any) {
+        const msg = (e.message || '').toLowerCase();
+        if (msg.includes('invalidaction') || msg.includes('invalid action') || msg.includes('unreachable') || msg.includes('wasmvm') || msg.includes('unknown') || msg.includes('symbol')) {
+          premiumSkipped = true;
+          this.logger.warn(`Soft-fail cobrança on-chain policy ${p.id} (skipped): ${e.message}`);
+        } else {
+          this.logger.warn(`Falha cobrança on-chain policy ${p.id}: ${e.message}`);
+          continue; // aborta este ciclo, tenta na próxima
+        }
       }
 
-      const newFunding = (p.funding_balance_xlm || 0) - p.hourly_rate_xlm;
-      const totalPaid = (p.total_premium_paid_xlm || 0) + p.hourly_rate_xlm;
-      nextCharge = new Date(now + 60 * 60 * 1000).toISOString();
+      const updates: Record<string, any> = { next_charge_at: new Date(now + 60 * 60 * 1000).toISOString() };
+      if (!premiumSkipped) {
+        updates.funding_balance_xlm = (p.funding_balance_xlm || 0) - p.hourly_rate_xlm;
+        updates.total_premium_paid_xlm = (p.total_premium_paid_xlm || 0) + p.hourly_rate_xlm;
+        updates.last_charge_at = new Date().toISOString();
+      }
+      nextCharge = updates.next_charge_at;
       try {
-        await this.policiesRepo.updateFields(p.id, {
-          funding_balance_xlm: newFunding,
-          total_premium_paid_xlm: totalPaid,
-          last_charge_at: new Date().toISOString(),
-          next_charge_at: nextCharge,
-        });
+        await this.policiesRepo.updateFields(p.id, updates);
       } catch (e) {
         this.logger.error(`Falha atualizar DB pós cobrança policy ${p.id}: ${(e as Error).message}`);
         continue;
       }
 
-      // Registrar refs e ledger (falhas aqui não revertam)
+      // Registrar refs e ledger
       try {
-        await this.premiumRefs.save({ ref, policy_id: p.id, user_id: p.user_id, amount_xlm: p.hourly_rate_xlm, tx_hash: txHash, collected: true });
+        await this.premiumRefs.save({ ref, policy_id: p.id, user_id: p.user_id, amount_xlm: p.hourly_rate_xlm, tx_hash: txHash, collected: !premiumSkipped });
       } catch {}
       try {
         await this.ledgerRepo.add({
           user_id: p.user_id,
           policy_id: p.id,
-          event_type: 'policy_hourly_charge',
+          event_type: premiumSkipped ? 'policy_hourly_charge_skipped' : 'policy_hourly_charge',
           event_data: { cycle_end: nextCharge, ref, tx_hash: txHash },
-          amount: p.hourly_rate_xlm,
+          amount: premiumSkipped ? 0 : p.hourly_rate_xlm,
           currency: 'XLM'
         });
       } catch {}

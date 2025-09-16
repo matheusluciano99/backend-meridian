@@ -3,6 +3,7 @@ import { ClaimsRepository } from './claims.repository';
 import { PoliciesRepository } from '../policies/policies.repository';
 import { SorobanService } from '../soroban/soroban.service';
 import { xlmToStroops } from '../common/stellar-units';
+import { UsersRepository } from '../users/users.repository';
 
 @Injectable()
 export class ClaimsService {
@@ -13,6 +14,7 @@ export class ClaimsService {
     private readonly claimsRepo: ClaimsRepository,
     private readonly policiesRepo: PoliciesRepository,
     private readonly sorobanService: SorobanService,
+    private readonly usersRepo: UsersRepository,
   ) {}
 
   async create(userId: string, policyId: string, claimType: string, description: string, incidentDate: string, claimAmount: number) {
@@ -68,12 +70,10 @@ export class ClaimsService {
     // Executa payout no contrato inteligente
     let payoutHash: string | undefined;
     try {
+      const user = await this.usersRepo.ensureWalletAddress(claim.user_id);
+      if (!user?.wallet_address) throw new Error('User wallet not found');
       const stroops = xlmToStroops(approvedAmount.toString());
-      // Recuperar wallet (assumindo padrão user_id -> wallet) para obter a public key real
-      // Reaproveitamos PoliciesRepository? Não; ideal seria WalletsService, mas neste service não está injetado.
-      // MVP: assumir que user_id já é a public key se começa com 'G'. Caso contrário, abortar com erro claro.
-      const toAddress = claim.user_id.startsWith('G') ? claim.user_id : (() => { throw new Error('Claim user_id is not a Stellar public key (wallet service not injected here)'); })();
-      const res = await this.sorobanService.payout(toAddress, stroops);
+      const res = await this.sorobanService.payout(user.wallet_address, stroops);
       payoutHash = res.txHash;
     } catch (error) {
       console.error('Erro ao executar payout no contrato:', error);

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PoliciesRepository } from './policies.repository';
 import { SorobanService } from '../soroban/soroban.service';
 import { xlmToStroops } from '../common/stellar-units';
@@ -19,8 +19,23 @@ export class PoliciesService {
   ) {}
 
   async create(userId: string, productId: string) {
+    // Validate user exists to avoid FK violation
+    const user = await this.usersRepo.findById(userId);
+    if (!user) {
+      throw new NotFoundException({
+        message: 'User not found',
+        userId,
+        hint: 'Crie o usuário primeiro ou use um userId válido.'
+      });
+    }
     const product = await this.productsRepo.findById(productId);
-    if (!product) throw new Error(`Product with id ${productId} not found`);
+    if (!product) {
+      throw new NotFoundException({
+        message: 'Product not found',
+        productId,
+        hint: 'Verifique se o produto existe ou re-seed o banco.'
+      });
+    }
 
     const startDate = new Date();
     const endDate = new Date();

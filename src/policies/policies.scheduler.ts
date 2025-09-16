@@ -51,6 +51,9 @@ export class PoliciesBillingScheduler {
       try {
         const amountStroops = xlmToStroops(p.hourly_rate_xlm.toString());
         const chain = await this.soroban.collectPremiumWithRef(p.user_id, amountStroops, ref);
+        if (!chain || !chain.txHash) {
+          throw new Error('collectPremiumWithRef returned no result/txHash');
+        }
         txHash = chain.txHash;
         await this.premiumRefs.save({ ref, policy_id: p.id, user_id: p.user_id, amount_xlm: p.hourly_rate_xlm, tx_hash: txHash, collected: true });
         await this.ledgerRepo.add({

@@ -47,4 +47,9 @@ export class PoliciesController {
   getOne(@Param('id') id: string) {
     return this.policiesService.getById(id);
   }
+
+  @Get(':id/onchain')
+  getOnchain(@Param('id') id: string) {
+    return this.policiesService['sorobanService'].getPolicy(Number(id));
+  }
 }

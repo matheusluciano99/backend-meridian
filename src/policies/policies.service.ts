@@ -61,13 +61,23 @@ export class PoliciesService {
       throw new Error('Insufficient funding to activate (need at least one hour funded)');
     }
 
-    // Debita primeira hora do funding e registra pagamento lógico
+    // Primeiro: tentativa de cobrança on-chain (idempotente via ref "activate:<id>")
+    const activationRef = `activate:${id}`;
+    let chainTx: string | undefined;
+    try {
+      const amountStroops = xlmToStroops(policy.hourly_rate_xlm.toString());
+      const chain = await this.sorobanService.collectPremiumWithRef(policy.user_id, amountStroops, activationRef);
+      if (!chain || !chain.txHash) throw new Error('collectPremiumWithRef activation returned no tx');
+      chainTx = chain.txHash;
+    } catch (e) {
+      throw new Error('On-chain activation premium failed: ' + (e as Error).message);
+    }
+
+    // Debita primeira hora do funding e registra pagamento lógico somente após sucesso on-chain
     const newFunding = (policy.funding_balance_xlm || 0) - policy.hourly_rate_xlm;
     const totalPaid = (policy.total_premium_paid_xlm || 0) + policy.hourly_rate_xlm;
     const now = new Date();
     const nextCharge = new Date(now.getTime() + 60 * 60 * 1000); // +1h
-
-    // Atualiza status para ACTIVE antes da chamada on-chain
     const updated = await this.repo.updateFields(id, {
       status: 'ACTIVE',
       funding_balance_xlm: newFunding,
@@ -82,7 +92,7 @@ export class PoliciesService {
         user_id: updated.user_id,
         policy_id: updated.id,
         event_type: 'policy_hourly_charge',
-        event_data: { reason: 'activation_first_hour' },
+        event_data: { reason: 'activation_first_hour', ref: activationRef, tx_hash: chainTx },
         amount: policy.hourly_rate_xlm,
         currency: 'XLM'
       });
@@ -90,8 +100,12 @@ export class PoliciesService {
         user_id: updated.user_id,
         policy_id: updated.id,
         event_type: 'policy_activated',
-        event_data: { activation_ref: `activate:${updated.id}` }
+        event_data: { activation_ref: activationRef, tx_hash: chainTx }
       });
+      // Salvar premium_ref para rastreio junto dos demais ciclos
+      try {
+        await this.premiumRefsRepo.save({ ref: activationRef, policy_id: updated.id, user_id: updated.user_id, amount_xlm: policy.hourly_rate_xlm, tx_hash: chainTx, collected: true });
+      } catch {}
     } catch (e) {
       // tolerância a falha ledger
     }
@@ -103,7 +117,7 @@ export class PoliciesService {
         updated.user_id,
         updated.product?.code || 'UNKNOWN',
         amountStroops,
-        `activate:${updated.id}`
+        activationRef
       );
     } catch (error) {
       console.error('Erro ao ativar apólice no contrato:', error);
@@ -115,7 +129,31 @@ export class PoliciesService {
   }
 
   pause(id: string) {
-    return this.repo.updateStatus(id, 'PAUSED');
+    return this.pausePolicy(id);
+  }
+
+  private async pausePolicy(id: string) {
+    const policy = await this.repo.findById(id);
+    if (!policy) throw new Error('Policy not found');
+    if (policy.status !== 'ACTIVE') throw new Error('Only ACTIVE policies can be paused');
+    // Tenta pausar on-chain (best effort)
+    let txHash: string | undefined;
+    try {
+      const chain = await this.sorobanService.pausePolicy(Number(id));
+      txHash = chain.txHash;
+    } catch (e) {
+      // se falhar continuamos apenas local (pode mostrar warning depois)
+    }
+    const updated = await this.repo.updateStatus(id, 'PAUSED');
+    try {
+      await this.ledgerRepo.add({
+        user_id: updated.user_id,
+        policy_id: updated.id,
+        event_type: 'policy_paused',
+        event_data: { tx_hash: txHash }
+      });
+    } catch {}
+    return updated;
   }
 
   findAll() {

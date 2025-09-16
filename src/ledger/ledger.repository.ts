@@ -43,4 +43,15 @@ export class LedgerRepository {
     if (error) throw error;
     return data;
   }
+
+  async findByPolicyAndType(policyId: string, eventType: string) {
+    const { data, error } = await this.supabase
+      .from('ledger')
+      .select('*')
+      .eq('policy_id', policyId)
+      .eq('event_type', eventType)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
 }

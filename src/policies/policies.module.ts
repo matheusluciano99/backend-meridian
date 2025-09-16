@@ -7,9 +7,10 @@ import { SorobanModule } from '../soroban/soroban.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { PoliciesBillingScheduler } from './policies.scheduler';
 import { PremiumRefsRepository } from './premium-refs.repository';
+import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [SorobanModule, LedgerModule],
+  imports: [SorobanModule, LedgerModule, UsersModule],
   controllers: [PoliciesController],
   providers: [PoliciesService, PoliciesRepository, ProductsRepository, PoliciesBillingScheduler, PremiumRefsRepository],
   exports: [PoliciesRepository, PoliciesService],

@@ -44,11 +44,19 @@ export class SorobanService {
   }
 
   private buildI128(amount: bigint): xdr.ScVal {
-    const hi = (amount >> 64n) & 0xffffffffffffffffn;
+    if (amount < 0n) throw new Error('Negative i128 not supported here');
+    // Se couber em 63 bits, podemos usar diretamente i64 para evitar complexidade (contratos muitas vezes aceitam i64)
+    const MAX_I64 = (1n << 63n) - 1n;
+    if (amount <= MAX_I64) {
+      console.log('[buildI128->i64] amount=', amount.toString());
+      return xdr.ScVal.scvI64(xdr.Int64.fromString(amount.toString()));
+    }
+    const hi = amount >> 64n;
     const lo = amount & 0xffffffffffffffffn;
+    console.log('[buildI128->i128] amount=', amount.toString(), 'hi=', hi.toString(), 'lo=', lo.toString());
     return xdr.ScVal.scvI128(
       new xdr.Int128Parts({
-        hi: xdr.Uint64.fromString(hi.toString()),
+        hi: xdr.Int64.fromString(hi.toString()),
         lo: xdr.Uint64.fromString(lo.toString()),
       }),
     );
@@ -69,6 +77,8 @@ export class SorobanService {
   async collectPremium(userAddress: string, amountStroops: bigint) {
     if (!this.riskPoolContract) throw new Error('RiskPool contract ID not configured');
     const account = await this.loadAccount();
+    if (amountStroops <= 0n) throw new Error('Amount must be > 0');
+    console.log('[collectPremium] amountStroops=', amountStroops.toString());
     const tx = new TransactionBuilder(account, {
       fee: '100',
       networkPassphrase: this.networkPassphrase,
@@ -90,6 +100,12 @@ export class SorobanService {
   async collectPremiumWithRef(userAddress: string, amountStroops: bigint, paymentRef: string) {
     if (!this.riskPoolContract) throw new Error('RiskPool contract ID not configured');
     const account = await this.loadAccount();
+    if (amountStroops <= 0n) {
+      throw new Error('Amount must be > 0 stroops');
+    }
+    // Debug temporário
+    // eslint-disable-next-line no-console
+    console.log('[collectPremiumWithRef] user=', userAddress, 'amountStroops=', amountStroops.toString(), 'ref=', paymentRef);
     // Tenta método novo; se falhar por inexistente, fallback para antigo
     let useLegacy = false;
     try {
@@ -98,6 +114,7 @@ export class SorobanService {
         networkPassphrase: this.networkPassphrase,
       })
         .addOperation(
+          // Debug inline: ensure positive values
           this.riskPoolContract.call(
             'collect_premium_with_ref',
             Address.fromString(userAddress).toScVal(),
@@ -110,14 +127,25 @@ export class SorobanService {
       const hash = await this.signAndSend(txNew);
       return { txHash: hash, paymentRef };
     } catch (e: any) {
-      const msg = (e?.message || '').toLowerCase();
-      if (msg.includes('unknown') || msg.includes('symbol') || msg.includes('missing')) {
+      const raw = e?.message || '';
+      const msg = raw.toLowerCase();
+      if (
+        msg.includes('unknown') ||
+        msg.includes('symbol') ||
+        msg.includes('missing') ||
+        msg.includes('unreachable') ||
+        msg.includes('invalidaction') ||
+        msg.includes('invalid action') ||
+        msg.includes('wasmvm')
+      ) {
         useLegacy = true;
+        console.log('[collectPremiumWithRef] fallback to legacy collect_premium. reason=', raw);
       } else {
         throw e;
       }
     }
     if (useLegacy) {
+      console.log('[collectPremiumWithRef] executing legacy path');
       const legacy = await this.collectPremium(userAddress, amountStroops);
       return { ...legacy, paymentRef, legacy: true };
     }
@@ -126,6 +154,10 @@ export class SorobanService {
   async activatePolicy(userAddress: string, product: string, amountStroops: bigint, paymentRef: string) {
     if (!this.policyRegistryContract) throw new Error('PolicyRegistry contract ID not configured');
     const account = await this.loadAccount();
+    if (amountStroops <= 0n) {
+      throw new Error('Coverage amount must be > 0 stroops');
+    }
+
     const tx = new TransactionBuilder(account, {
       fee: '100',
       networkPassphrase: this.networkPassphrase,
@@ -135,15 +167,31 @@ export class SorobanService {
           'activate_policy',
           Address.fromString(userAddress).toScVal(),
           xdr.ScVal.scvString(product),
-          this.buildI128(amountStroops),
+          this.i128ToScVal(amountStroops),       // ✅ corrigido
           xdr.ScVal.scvString(paymentRef),
         ),
       )
       .setTimeout(30)
       .build();
+
     const hash = await this.signAndSend(tx);
     return { txHash: hash };
   }
+
+  // helper
+    private i128ToScVal(value: bigint): xdr.ScVal {
+      if (value < 0n) throw new Error('Negative i128 not supported');
+      const hi = value >> 64n;
+      const lo = value & 0xffffffffffffffffn;
+      return xdr.ScVal.scvI128(
+        new xdr.Int128Parts({
+          hi: xdr.Int64.fromString(hi.toString()),
+          lo: xdr.Uint64.fromString(lo.toString()),
+        }),
+      );
+    }
+
+
 
   async payout(toUserAddress: string, amountStroops: bigint) {
     if (!this.riskPoolContract) throw new Error('RiskPool contract ID not configured');

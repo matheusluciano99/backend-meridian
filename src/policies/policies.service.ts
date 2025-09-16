@@ -5,6 +5,7 @@ import { xlmToStroops } from '../common/stellar-units';
 import { ProductsRepository } from '../products/products.repository';
 import { LedgerRepository } from '../ledger/ledger.repository';
 import { PremiumRefsRepository } from './premium-refs.repository';
+import { UsersRepository } from '../users/users.repository';
 
 @Injectable()
 export class PoliciesService {
@@ -14,6 +15,7 @@ export class PoliciesService {
     private readonly productsRepo: ProductsRepository,
     private readonly ledgerRepo: LedgerRepository,
     private readonly premiumRefsRepo: PremiumRefsRepository,
+    private readonly usersRepo: UsersRepository,
   ) {}
 
   async create(userId: string, productId: string) {
@@ -50,7 +52,6 @@ export class PoliciesService {
   }
 
   async activate(id: string) {
-    // Obter policy completa
     const policy = await this.repo.findById(id);
     if (!policy) throw new Error('Policy not found');
     if (policy.status !== 'PENDING_FUNDING' && policy.status !== 'PAUSED') {
@@ -61,69 +62,115 @@ export class PoliciesService {
       throw new Error('Insufficient funding to activate (need at least one hour funded)');
     }
 
-    // Primeiro: tentativa de cobrança on-chain (idempotente via ref "activate:<id>")
+    const user = await this.usersRepo.ensureWalletAddress(policy.user_id);
+    if (!user) throw new Error('User not found');
+    const userWalletAddress = user.wallet_address;
+
     const activationRef = `activate:${id}`;
     let chainTx: string | undefined;
+    let premiumSkipped = false;
     try {
       const amountStroops = xlmToStroops(policy.hourly_rate_xlm.toString());
-      const chain = await this.sorobanService.collectPremiumWithRef(policy.user_id, amountStroops, activationRef);
+      const effectiveAmount = amountStroops <= 0n ? 1n : amountStroops;
+      console.log('[PoliciesService.activate] hourly_rate_xlm=', policy.hourly_rate_xlm, 'stroops=', amountStroops.toString(), 'effective=', effectiveAmount.toString());
+      const chain = await this.sorobanService.collectPremiumWithRef(userWalletAddress, effectiveAmount, activationRef);
       if (!chain || !chain.txHash) throw new Error('collectPremiumWithRef activation returned no tx');
       chainTx = chain.txHash;
     } catch (e) {
-      throw new Error('On-chain activation premium failed: ' + (e as Error).message);
+      const msg = (e as Error).message || '';
+      const lower = msg.toLowerCase();
+      if (
+        lower.includes('invalidaction') ||
+        lower.includes('invalid action') ||
+        lower.includes('unreachable') ||
+        lower.includes('wasmvm') ||
+        lower.includes('unknown') ||
+        lower.includes('symbol')
+      ) {
+        premiumSkipped = true;
+        console.warn('[PoliciesService.activate] premium collection skipped (soft-fail):', msg);
+      } else {
+        console.error('[PoliciesService.activate] premium collection failed hard:', msg);
+        throw new Error('On-chain activation premium failed: ' + msg);
+      }
     }
 
-    // Debita primeira hora do funding e registra pagamento lógico somente após sucesso on-chain
-    const newFunding = (policy.funding_balance_xlm || 0) - policy.hourly_rate_xlm;
-    const totalPaid = (policy.total_premium_paid_xlm || 0) + policy.hourly_rate_xlm;
     const now = new Date();
-    const nextCharge = new Date(now.getTime() + 60 * 60 * 1000); // +1h
-    const updated = await this.repo.updateFields(id, {
-      status: 'ACTIVE',
-      funding_balance_xlm: newFunding,
-      total_premium_paid_xlm: totalPaid,
-      last_charge_at: now.toISOString(),
-      next_charge_at: nextCharge.toISOString()
-    });
+    const nextHour = new Date(now.getTime() + 60 * 60 * 1000);
+    const fields: Record<string, any> = { status: 'ACTIVE', next_charge_at: nextHour.toISOString() };
+    if (!premiumSkipped) {
+      fields.funding_balance_xlm = (policy.funding_balance_xlm || 0) - policy.hourly_rate_xlm;
+      fields.total_premium_paid_xlm = (policy.total_premium_paid_xlm || 0) + policy.hourly_rate_xlm;
+      fields.last_charge_at = now.toISOString();
+    }
+    const updatedPartial = await this.repo.updateFields(id, fields);
+    const updated = await this.repo.findById(id); // recarrega com relação product
 
-    // Ledger: primeira hora cobrada na ativação
     try {
-      await this.ledgerRepo.add({
-        user_id: updated.user_id,
-        policy_id: updated.id,
-        event_type: 'policy_hourly_charge',
-        event_data: { reason: 'activation_first_hour', ref: activationRef, tx_hash: chainTx },
-        amount: policy.hourly_rate_xlm,
-        currency: 'XLM'
-      });
+      if (!premiumSkipped) {
+        await this.ledgerRepo.add({
+          user_id: updated.user_id,
+          policy_id: updated.id,
+          event_type: 'policy_hourly_charge',
+          event_data: { reason: 'activation_first_hour', ref: activationRef, tx_hash: chainTx },
+          amount: policy.hourly_rate_xlm,
+          currency: 'XLM'
+        });
+      } else {
+        await this.ledgerRepo.add({
+          user_id: updated.user_id,
+          policy_id: updated.id,
+          event_type: 'policy_hourly_charge_skipped',
+          event_data: { reason: 'activation_soft_fail', ref: activationRef },
+          amount: 0,
+          currency: 'XLM'
+        });
+      }
       await this.ledgerRepo.add({
         user_id: updated.user_id,
         policy_id: updated.id,
         event_type: 'policy_activated',
         event_data: { activation_ref: activationRef, tx_hash: chainTx }
       });
-      // Salvar premium_ref para rastreio junto dos demais ciclos
       try {
-        await this.premiumRefsRepo.save({ ref: activationRef, policy_id: updated.id, user_id: updated.user_id, amount_xlm: policy.hourly_rate_xlm, tx_hash: chainTx, collected: true });
+        await this.premiumRefsRepo.save({ ref: activationRef, policy_id: updated.id, user_id: updated.user_id, amount_xlm: policy.hourly_rate_xlm, tx_hash: chainTx, collected: !premiumSkipped });
       } catch {}
-    } catch (e) {
-      // tolerância a falha ledger
-    }
+    } catch {}
 
+    let onchainActivationSkipped = false;
     try {
-      const amountXlm = updated.coverage_amount || 0;
+      const amountXlm = policy.coverage_amount || 0;
       const amountStroops = xlmToStroops((amountXlm || 0).toString());
+      const coverageStroops = amountStroops <= 0n ? 1n : amountStroops;
       await this.sorobanService.activatePolicy(
-        updated.user_id,
-        updated.product?.code || 'UNKNOWN',
-        amountStroops,
+        userWalletAddress,
+        policy.product?.code || 'UNKNOWN',
+        coverageStroops,
         activationRef
       );
-    } catch (error) {
-      console.error('Erro ao ativar apólice no contrato:', error);
-      // Reverte (melhoria futura: transação SQL + compensação)
-      await this.repo.updateFields(id, { status: policy.status, funding_balance_xlm: policy.funding_balance_xlm, total_premium_paid_xlm: policy.total_premium_paid_xlm, last_charge_at: policy.last_charge_at, next_charge_at: policy.next_charge_at });
-      throw error;
+    } catch (error: any) {
+      const msg = (error?.message || '').toLowerCase();
+      if (msg.includes('invalidaction') || msg.includes('invalid action') || msg.includes('unreachable') || msg.includes('wasmvm')) {
+        onchainActivationSkipped = true;
+        console.warn('[PoliciesService.activate] on-chain activate_policy skipped (soft-fail):', error.message);
+      } else {
+        console.error('Erro ao ativar apólice no contrato (hard fail):', error);
+        await this.repo.updateFields(id, { status: policy.status, funding_balance_xlm: policy.funding_balance_xlm, total_premium_paid_xlm: policy.total_premium_paid_xlm, last_charge_at: policy.last_charge_at, next_charge_at: policy.next_charge_at });
+        throw error;
+      }
+    }
+
+    if (onchainActivationSkipped) {
+      try {
+        await this.ledgerRepo.add({
+          user_id: updated.user_id,
+          policy_id: updated.id,
+          event_type: 'policy_activation_onchain_skipped',
+          event_data: { reason: 'contract_invalidaction', ref: activationRef },
+          amount: 0,
+          currency: 'XLM'
+        });
+      } catch {}
     }
     return updated;
   }

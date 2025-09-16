@@ -43,8 +43,8 @@ export class ClaimsController {
   @Get('eligible-products')
   getEligibleProducts() {
     return {
-      allowedProducts: this.claimsService.getAllowedProductsForClaims(),
-      message: 'Produtos que permitem sinistros no MVP'
+      allowedProducts: [], // Todos os produtos são elegíveis
+      message: 'Todos os produtos permitem sinistros'
     };
   }
 }

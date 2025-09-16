@@ -2,7 +2,7 @@ import { Controller, Post, Body } from '@nestjs/common';
 import { AnchorsService } from './anchors.service';
 
 interface DepositBody {
-  wallet: string;
+  userId: string;
   amount: number;
 }
 
@@ -12,6 +12,6 @@ export class AnchorsController {
 
   @Post('deposit')
   startDeposit(@Body() body: DepositBody) {
-    return this.anchorsService.startDeposit(body.wallet, body.amount);
+    return this.anchorsService.startDeposit(body.userId, body.amount);
   }
 }

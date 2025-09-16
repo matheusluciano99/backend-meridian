@@ -9,6 +9,7 @@ import { AnchorsModule } from './anchors/anchors.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { SorobanModule } from './soroban/soroban.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { ClaimsModule } from './claims/claims.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     LedgerModule,
     SorobanModule,
     WebhooksModule,
+    ClaimsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

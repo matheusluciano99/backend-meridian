@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query } from '@nestjs/common';
 import { LedgerService } from './ledger.service';
 
 interface LedgerEvent {
@@ -15,7 +15,10 @@ export class LedgerController {
   }
 
   @Get()
-  findAll() {
+  findAll(@Query('userId') userId?: string) {
+    if (userId) {
+      return this.ledgerService.findByUser(userId);
+    }
     return this.ledgerService.findAll();
   }
 }

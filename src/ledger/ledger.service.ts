@@ -16,4 +16,8 @@ export class LedgerService {
   findAll() {
     return this.repo.findAll();
   }
+
+  findByUser(userId: string) {
+    return this.repo.findByUser(userId);
+  }
 }

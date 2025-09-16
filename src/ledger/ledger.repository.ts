@@ -26,7 +26,20 @@ export class LedgerRepository {
   }
 
   async findAll() {
-    const { data, error } = await this.supabase.from('ledger').select('*');
+    const { data, error } = await this.supabase
+      .from('ledger')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  }
+
+  async findByUser(userId: string) {
+    const { data, error } = await this.supabase
+      .from('ledger')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
     if (error) throw error;
     return data;
   }

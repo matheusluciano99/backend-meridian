@@ -12,5 +12,6 @@ import { PremiumRefsRepository } from './premium-refs.repository';
   imports: [SorobanModule, LedgerModule],
   controllers: [PoliciesController],
   providers: [PoliciesService, PoliciesRepository, ProductsRepository, PoliciesBillingScheduler, PremiumRefsRepository],
+  exports: [PoliciesRepository, PoliciesService],
 })
 export class PoliciesModule {}

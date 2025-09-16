@@ -6,5 +6,6 @@ import { LedgerRepository } from './ledger.repository';
 @Module({
   controllers: [LedgerController],
   providers: [LedgerService, LedgerRepository],
+    exports: [LedgerRepository],
 })
 export class LedgerModule {}

@@ -8,12 +8,13 @@ import { WalletsService } from './wallets.service';
 import { AnchorTransactionsRepository } from './anchor-transactions.repository';
 import { AnchorAuthService } from './anchor-auth.service';
 import { StellarUtilityService } from './stellar-utility.service';
-import { LedgerRepository } from '../ledger/ledger.repository';
+import { LedgerModule } from '../ledger/ledger.module';
 import { UsersRepository } from '../users/users.repository';
 import { SorobanModule } from '../soroban/soroban.module';
+import { PoliciesModule } from '../policies/policies.module';
 
 @Module({
-  imports: [HttpModule, SorobanModule],
+  imports: [HttpModule, SorobanModule, LedgerModule, PoliciesModule],
   controllers: [AnchorsController],
   providers: [
     AnchorsService,
@@ -23,7 +24,6 @@ import { SorobanModule } from '../soroban/soroban.module';
     AnchorTransactionsRepository,
     AnchorAuthService,
     StellarUtilityService,
-    LedgerRepository,
     UsersRepository,
   ],
   exports: [AnchorsService],

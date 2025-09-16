@@ -11,7 +11,7 @@ export class PoliciesController {
   constructor(private readonly policiesService: PoliciesService) {}
 
   @Post()
-  create(@Body() body: CreatePolicyBody) {
+  async create(@Body() body: CreatePolicyBody) {
     return this.policiesService.create(body.userId, body.productId);
   }
 

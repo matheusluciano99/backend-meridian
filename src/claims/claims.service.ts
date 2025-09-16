@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { ClaimsRepository } from './claims.repository';
 import { PoliciesRepository } from '../policies/policies.repository';
 import { SorobanService } from '../soroban/soroban.service';
+import { xlmToStroops } from '../common/stellar-units';
 
 @Injectable()
 export class ClaimsService {
@@ -15,7 +16,6 @@ export class ClaimsService {
     const policy = await this.policiesRepo.findById(policyId);
     if (!policy) throw new BadRequestException('Policy not found');
     if (policy.user_id !== userId) throw new BadRequestException('Policy does not belong to user');
-    // Restrição MVP: apenas produto INCOME_PER_DIEM
     if (policy.product?.code !== 'INCOME_PER_DIEM') {
       throw new BadRequestException('Claims only allowed for INCOME_PER_DIEM product in MVP');
     }
@@ -42,16 +42,19 @@ export class ClaimsService {
     await this.claimsRepo.updateApprovedAmount(claimId, approvedAmount);
     
     // Executa payout no contrato inteligente
+    let payoutHash: string | undefined;
     try {
-      await this.sorobanService.payout(claim.user_id, approvedAmount);
+      const stroops = xlmToStroops(approvedAmount.toString());
+      const res = await this.sorobanService.payout(claim.user_id, stroops);
+      payoutHash = res.txHash;
     } catch (error) {
       console.error('Erro ao executar payout no contrato:', error);
       // Reverte status se falhar no contrato
       await this.claimsRepo.updateStatus(claimId, 'approved');
       throw error;
     }
-    
-    return this.claimsRepo.findById(claimId);
+    const updated = await this.claimsRepo.findById(claimId);
+    return { ...updated, payout_tx_hash: payoutHash };
   }
 
   findAllByUser(userId: string) {

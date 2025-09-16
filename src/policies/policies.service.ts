@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PoliciesRepository } from './policies.repository';
 import { SorobanService } from '../soroban/soroban.service';
+import { xlmToStroops } from '../common/stellar-units';
 
 @Injectable()
 export class PoliciesService {
@@ -20,10 +21,13 @@ export class PoliciesService {
     
     // Depois registra no contrato inteligente
     try {
+      const amountXlm = policy.coverage_amount || 0;
+      const amountStroops = xlmToStroops((amountXlm || 0).toString());
       await this.sorobanService.activatePolicy(
         policy.user_id,
         policy.product?.code || 'UNKNOWN',
-        policy.coverage_amount || 0
+        amountStroops,
+        `manual:${policy.id}`
       );
     } catch (error) {
       console.error('Erro ao ativar apólice no contrato:', error);

@@ -166,6 +166,25 @@ export class SorobanService {
     return { txHash: hash };
   }
 
+  async pausePolicy(policyId: number) {
+    if (!this.policyRegistryContract) throw new Error('PolicyRegistry contract ID not configured');
+    const account = await this.loadAccount();
+    const tx = new TransactionBuilder(account, {
+      fee: '100',
+      networkPassphrase: this.networkPassphrase,
+    })
+      .addOperation(
+        this.policyRegistryContract.call(
+          'pause_policy',
+          xdr.ScVal.scvU64(xdr.Uint64.fromString(policyId.toString())),
+        ),
+      )
+      .setTimeout(30)
+      .build();
+    const hash = await this.signAndSend(tx);
+    return { txHash: hash };
+  }
+
   async getPoolBalance(): Promise<{ balanceStroops: bigint }> {
     if (!this.riskPoolContract) throw new Error('RiskPool contract ID not configured');
     const account = await this.loadAccount();

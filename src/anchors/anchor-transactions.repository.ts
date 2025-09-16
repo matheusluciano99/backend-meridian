@@ -70,4 +70,14 @@ export class AnchorTransactionsRepository {
     if (error) throw error;
     return data;
   }
+
+  async findBySep24Id(sep24Id: string) {
+    const { data, error } = await this.supabase
+      .from('anchor_transactions')
+      .select('*')
+      .contains('extra', { sep24Id })
+      .single();
+    if (error) throw error;
+    return data;
+  }
 }

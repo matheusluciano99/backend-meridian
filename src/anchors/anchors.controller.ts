@@ -24,9 +24,24 @@ export class AnchorsController {
     return this.anchorsService.listTransactions(userId);
   }
 
+  @Get('account')
+  account(@Query('userId') userId: string) {
+    return this.anchorsService.getAccountInfo(userId);
+  }
+
   @Get('reconcile')
   reconcile() {
     return this.anchorsService.reconcileDeposits();
+  }
+
+  @Get('sep24/refresh')
+  refresh(@Query('id') id: string) {
+    return this.anchorsService.refreshSep24(id);
+  }
+
+  @Get('balance')
+  balance(@Query('userId') userId: string) {
+    return this.anchorsService.userBalance(userId);
   }
 
   @Post('auth/challenge')

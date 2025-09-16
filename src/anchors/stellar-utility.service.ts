@@ -18,28 +18,32 @@ export class StellarUtilityService {
     const { publicKey, secret, assetCode, assetIssuer } = params;
     const horizon = new Horizon.Server(params.horizonUrl || this.defaultHorizon);
     
-    // XLM (native asset) doesn't need trustline
-    if (assetCode === 'XLM' || !assetIssuer) {
-      return { created: false, message: 'Native asset, no trustline needed' };
-    }
-    
-    let account;
-    try {
-      account = await horizon.loadAccount(publicKey);
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        // Account not found, try to fund it
-        try {
+    // Mesmo para XLM precisamos garantir que a conta existe e está financiada.
+    // Para ativos não nativos, além disso criamos trustline.
+    const ensureAccountExists = async () => {
+      try {
+        return await horizon.loadAccount(publicKey);
+      } catch (error: any) {
+        if (error.response?.status === 404) {
           await axios.get(`https://friendbot.stellar.org/?addr=${publicKey}`);
-          // Wait a bit for funding to propagate
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          account = await horizon.loadAccount(publicKey);
-        } catch (fundError) {
-          throw new Error(`Account ${publicKey} not found and funding failed: ${fundError.message}`);
+          // Poll até aparecer (máx ~5s)
+          for (let i = 0; i < 5; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            try {
+              return await horizon.loadAccount(publicKey);
+            } catch (_) {}
+          }
+          throw new Error(`Account ${publicKey} funding did not propagate in time`);
         }
-      } else {
         throw error;
       }
+    };
+
+    let account = await ensureAccountExists();
+
+    // XLM não requer trustline adicional
+    if (assetCode === 'XLM' || !assetIssuer) {
+      return { created: false, message: 'Account exists (native asset)' };
     }
     
     const existing = account.balances.find(b => (b as any).asset_code === assetCode && (b as any).asset_issuer === assetIssuer);

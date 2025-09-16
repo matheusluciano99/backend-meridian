@@ -13,6 +13,7 @@ async function bootstrap() {
     process.env.FRONTEND_URL,
     'https://meridian-insurance.vercel.app',
     'https://frontend-meridian-q0g7g1mdt-djairos-projects.vercel.app',
+    'https://frontend-meridian-1.vercel.app',
     // Permitir qualquer subdomínio do Vercel para desenvolvimento
     /^https:\/\/.*\.vercel\.app$/,
     // Permitir Railway para desenvolvimento

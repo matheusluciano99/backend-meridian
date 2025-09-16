@@ -125,4 +125,47 @@ export class SorobanService {
       throw error;
     }
   }
+
+  async getPoolBalance() {
+    try {
+      // Get account
+      const account = await this.server.getAccount(
+        this.signerKeypair.publicKey(),
+      );
+
+      // Build transaction to call get_balance
+      const tx = new TransactionBuilder(account, {
+        fee: '100',
+        networkPassphrase: this.networkPassphrase,
+      })
+        .addOperation(
+          this.riskPoolContract.call('get_balance'),
+        )
+        .setTimeout(30)
+        .build();
+
+      // Prepare transaction
+      const preparedTx = await this.server.prepareTransaction(tx);
+
+      // Simulate to get result (read-only call)
+      const simulation = await this.server.simulateTransaction(preparedTx);
+
+      // Log the full response for debugging
+      console.log('Simulation result:', JSON.stringify(simulation, null, 2));
+
+      return {
+        balance: '0',
+        message: 'Contract call simulated - check logs for details',
+        contractId: this.riskPoolContract.contractId(),
+        simulationResult: simulation
+      };
+    } catch (error) {
+      console.error('Error getting pool balance:', error);
+      return {
+        balance: '0',
+        error: error.message,
+        contractId: this.riskPoolContract.contractId()
+      };
+    }
+  }
 }

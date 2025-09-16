@@ -38,8 +38,39 @@ export class PoliciesRepository {
   }
 
   async findAll() {
-    const { data, error } = await this.supabase.from('policies').select('*');
+    const { data, error } = await this.supabase
+      .from('policies')
+      .select(`
+        *,
+        product:products(*)
+      `)
+      .order('created_at', { ascending: false });
     if (error) throw error;
     return data;
+  }
+
+  /**
+   * Retorna policies de um usuário específico.
+   * Também atualiza em memória (na resposta) o status para EXPIRED caso a data atual já tenha passado do end_date
+   * (não persiste automaticamente para evitar writes a cada leitura; isso pode virar um job futuramente).
+   */
+  async findAllByUser(userId: string) {
+    const { data, error } = await this.supabase
+      .from('policies')
+      .select(`
+        *,
+        product:products(*)
+      `)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    if (!data) return [];
+    const now = new Date();
+    return data.map(p => {
+      if (p.status !== 'EXPIRED' && p.end_date && new Date(p.end_date) < now) {
+        return { ...p, status: 'EXPIRED' };
+      }
+      return p;
+    });
   }
 }

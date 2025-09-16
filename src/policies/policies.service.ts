@@ -21,4 +21,8 @@ export class PoliciesService {
   findAll() {
     return this.repo.findAll();
   }
+
+  findAllByUser(userId: string) {
+    return this.repo.findAllByUser(userId);
+  }
 }

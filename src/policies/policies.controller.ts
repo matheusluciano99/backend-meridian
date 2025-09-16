@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Param, Body } from '@nestjs/common';
+import { Controller, Post, Get, Param, Body, Query } from '@nestjs/common';
 import { PoliciesService } from './policies.service';
 
 interface CreatePolicyBody {
@@ -26,7 +26,10 @@ export class PoliciesController {
   }
 
   @Get()
-  findAll() {
+  findAll(@Query('userId') userId?: string) {
+    if (userId) {
+      return this.policiesService.findAllByUser(userId);
+    }
     return this.policiesService.findAll();
   }
 }

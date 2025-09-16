@@ -39,4 +39,12 @@ export class ClaimsController {
   findAll(@Query('userId') userId: string) {
     return this.claimsService.findAllByUser(userId);
   }
+
+  @Get('eligible-products')
+  getEligibleProducts() {
+    return {
+      allowedProducts: this.claimsService.getAllowedProductsForClaims(),
+      message: 'Produtos que permitem sinistros no MVP'
+    };
+  }
 }

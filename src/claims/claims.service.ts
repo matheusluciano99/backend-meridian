@@ -6,6 +6,9 @@ import { xlmToStroops } from '../common/stellar-units';
 
 @Injectable()
 export class ClaimsService {
+  // Configuração MVP: produtos que permitem sinistros
+  private readonly ALLOWED_PRODUCTS_FOR_CLAIMS = ['INCOME_PER_DIEM'];
+
   constructor(
     private readonly claimsRepo: ClaimsRepository,
     private readonly policiesRepo: PoliciesRepository,
@@ -16,8 +19,13 @@ export class ClaimsService {
     const policy = await this.policiesRepo.findById(policyId);
     if (!policy) throw new BadRequestException('Policy not found');
     if (policy.user_id !== userId) throw new BadRequestException('Policy does not belong to user');
-    if (policy.product?.code !== 'INCOME_PER_DIEM') {
-      throw new BadRequestException('Claims only allowed for INCOME_PER_DIEM product in MVP');
+    // Verificar se o produto permite sinistros
+    if (!this.ALLOWED_PRODUCTS_FOR_CLAIMS.includes(policy.product?.code)) {
+      const allowedProducts = this.ALLOWED_PRODUCTS_FOR_CLAIMS.join(', ');
+      throw new BadRequestException(
+        `Sinistros são permitidos apenas para produtos: ${allowedProducts}. ` +
+        `Produto atual: ${policy.product?.name || 'Desconhecido'} (${policy.product?.code || 'N/A'})`
+      );
     }
     return this.claimsRepo.create({
       user_id: userId,
@@ -59,5 +67,15 @@ export class ClaimsService {
 
   findAllByUser(userId: string) {
     return this.claimsRepo.findAllByUser(userId);
+  }
+
+  // Método público para verificar se um produto permite sinistros
+  isProductEligibleForClaims(productCode: string): boolean {
+    return this.ALLOWED_PRODUCTS_FOR_CLAIMS.includes(productCode);
+  }
+
+  // Método público para obter lista de produtos elegíveis
+  getAllowedProductsForClaims(): string[] {
+    return [...this.ALLOWED_PRODUCTS_FOR_CLAIMS];
   }
 }

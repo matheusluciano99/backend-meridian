@@ -49,4 +49,14 @@ export class AnchorTransactionsRepository {
     if (error) throw error;
     return data;
   }
+
+  async listByUser(userId: string) {
+    const { data, error } = await this.supabase
+      .from('anchor_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  }
 }

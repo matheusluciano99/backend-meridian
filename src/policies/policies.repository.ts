@@ -5,6 +5,18 @@ interface Policy {
   user_id: string;
   product_id: string;
   status: string;
+  premium_amount?: number;
+  coverage_amount?: number;
+  start_date?: string;
+  end_date?: string;
+  auto_renewal?: boolean;
+  billing_model?: string;
+  hourly_rate_xlm?: number;
+  funding_balance_xlm?: number;
+  total_premium_paid_xlm?: number;
+  coverage_limit_xlm?: number;
+  next_charge_at?: string | null;
+  last_charge_at?: string | null;
 }
 
 @Injectable()
@@ -31,6 +43,29 @@ export class PoliciesRepository {
     const { data, error } = await this.supabase
       .from('policies')
       .update({ status })
+      .eq('id', id)
+      .select();
+    if (error) throw error;
+    return data[0];
+  }
+
+  async updateFields(id: string, fields: Record<string, any>) {
+    const { data, error } = await this.supabase
+      .from('policies')
+      .update(fields)
+      .eq('id', id)
+      .select();
+    if (error) throw error;
+    return data[0];
+  }
+
+  async increaseFunding(id: string, amount: number) {
+    // Usa RPC: update with expression not directly supported; fazer fetch + update simples
+    const current = await this.findById(id);
+    const newFunding = (current.funding_balance_xlm || 0) + amount;
+    const { data, error } = await this.supabase
+      .from('policies')
+      .update({ funding_balance_xlm: newFunding })
       .eq('id', id)
       .select();
     if (error) throw error;

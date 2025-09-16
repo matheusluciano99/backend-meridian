@@ -75,4 +75,14 @@ export class ClaimsRepository {
     if (error) throw error;
     return data;
   }
+
+  async findAllByPolicy(policyId: string) {
+    const { data, error } = await this.supabase
+      .from('claims')
+      .select('*')
+      .eq('policy_id', policyId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  }
 }

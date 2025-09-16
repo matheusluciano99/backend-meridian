@@ -45,6 +45,22 @@ export class ClaimsService {
     // Verifica se já foi pago
     if (claim.status === 'paid') throw new BadRequestException('Claim already paid');
     
+    // Carrega policy para validar limites
+    const policy = await this.policiesRepo.findById(claim.policy_id);
+    if (!policy) throw new BadRequestException('Policy not found for claim');
+    const coverageLimit = policy.coverage_limit_xlm || policy.coverage_amount || 0;
+    if (approvedAmount > coverageLimit) {
+      throw new BadRequestException('Approved amount exceeds coverage limit');
+    }
+    // Somar payouts já pagos (claims status paid) diferentes deste
+    const userClaims = await this.claimsRepo.findAllByPolicy(claim.policy_id);
+    const alreadyPaid = (userClaims || [])
+      .filter((c: any) => c.status === 'paid' && c.id !== claim.id && c.approved_amount)
+      .reduce((acc: number, c: any) => acc + Number(c.approved_amount), 0);
+    if (alreadyPaid + approvedAmount > coverageLimit) {
+      throw new BadRequestException('Coverage limit exceeded considering previous payouts');
+    }
+
     // Atualiza status e valor aprovado no banco
     await this.claimsRepo.updateStatus(claimId, 'paid');
     await this.claimsRepo.updateApprovedAmount(claimId, approvedAmount);
@@ -53,7 +69,11 @@ export class ClaimsService {
     let payoutHash: string | undefined;
     try {
       const stroops = xlmToStroops(approvedAmount.toString());
-      const res = await this.sorobanService.payout(claim.user_id, stroops);
+      // Recuperar wallet (assumindo padrão user_id -> wallet) para obter a public key real
+      // Reaproveitamos PoliciesRepository? Não; ideal seria WalletsService, mas neste service não está injetado.
+      // MVP: assumir que user_id já é a public key se começa com 'G'. Caso contrário, abortar com erro claro.
+      const toAddress = claim.user_id.startsWith('G') ? claim.user_id : (() => { throw new Error('Claim user_id is not a Stellar public key (wallet service not injected here)'); })();
+      const res = await this.sorobanService.payout(toAddress, stroops);
       payoutHash = res.txHash;
     } catch (error) {
       console.error('Erro ao executar payout no contrato:', error);

@@ -5,6 +5,7 @@ import { AnchorsService } from './anchors.service';
 interface DepositBody {
   userId: string;
   amount: number;
+  policyId?: string;
 }
 
 @Controller('anchors')
@@ -16,7 +17,7 @@ export class AnchorsController {
 
   @Post('deposit')
   startDeposit(@Body() body: DepositBody) {
-    return this.anchorsService.startDeposit(body.userId, body.amount);
+    return this.anchorsService.startDeposit(body.userId, body.amount, body.policyId);
   }
 
   @Get('transactions')

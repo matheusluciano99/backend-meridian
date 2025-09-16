@@ -10,6 +10,8 @@ import { LedgerModule } from './ledger/ledger.module';
 import { SorobanModule } from './soroban/soroban.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ClaimsModule } from './claims/claims.module';
+import { MicroModule } from './micro/micro.module';
+import { ChainEventsModule } from './chain-events/chain-events.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { ClaimsModule } from './claims/claims.module';
     SorobanModule,
     WebhooksModule,
     ClaimsModule,
+    MicroModule,
+    ChainEventsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

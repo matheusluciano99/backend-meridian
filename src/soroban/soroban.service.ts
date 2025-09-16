@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { rpc, Keypair, Contract, TransactionBuilder, Address, xdr } from '@stellar/stellar-sdk';
-import { STROOPS_PER_XLM } from '../common/stellar-units';
+import { STROOPS_PER_XLM, stroopsToXlmString } from '../common/stellar-units';
 
 @Injectable()
 export class SorobanService {
@@ -86,6 +86,43 @@ export class SorobanService {
     return { txHash: hash };
   }
 
+  // Placeholder até o contrato suportar payment_ref on-chain
+  async collectPremiumWithRef(userAddress: string, amountStroops: bigint, paymentRef: string) {
+    if (!this.riskPoolContract) throw new Error('RiskPool contract ID not configured');
+    const account = await this.loadAccount();
+    // Tenta método novo; se falhar por inexistente, fallback para antigo
+    let useLegacy = false;
+    try {
+      const txNew = new TransactionBuilder(account, {
+        fee: '100',
+        networkPassphrase: this.networkPassphrase,
+      })
+        .addOperation(
+          this.riskPoolContract.call(
+            'collect_premium_with_ref',
+            Address.fromString(userAddress).toScVal(),
+            this.buildI128(amountStroops),
+            xdr.ScVal.scvString(paymentRef),
+          ),
+        )
+        .setTimeout(30)
+        .build();
+      const hash = await this.signAndSend(txNew);
+      return { txHash: hash, paymentRef };
+    } catch (e: any) {
+      const msg = (e?.message || '').toLowerCase();
+      if (msg.includes('unknown') || msg.includes('symbol') || msg.includes('missing')) {
+        useLegacy = true;
+      } else {
+        throw e;
+      }
+    }
+    if (useLegacy) {
+      const legacy = await this.collectPremium(userAddress, amountStroops);
+      return { ...legacy, paymentRef, legacy: true };
+    }
+  }
+
   async activatePolicy(userAddress: string, product: string, amountStroops: bigint, paymentRef: string) {
     if (!this.policyRegistryContract) throw new Error('PolicyRegistry contract ID not configured');
     const account = await this.loadAccount();
@@ -155,7 +192,7 @@ export class SorobanService {
         }
       }
     } catch {}
-    return { balanceStroops: stroops };
+    return { balanceStroops: stroops, balanceXlm: stroopsToXlmString(stroops) } as any;
   }
 
   async getPolicy(policyId: number) {
@@ -175,6 +212,46 @@ export class SorobanService {
       .build();
     const prepared = await this.server.prepareTransaction(tx);
     const sim = await this.server.simulateTransaction(prepared);
-    return { raw: (sim as any).returnValue }; // MVP: retorno cru para debug
+    const raw = (sim as any).returnValue;
+    // Decoding Policy struct: expect scvMap with fields id (u64), user (address), product (string), amount (i128), active (bool)
+    let decoded: any = { raw };
+    try {
+      const scv = xdr.ScVal.fromXDR(raw.toXDR ? raw.toXDR() : raw);
+      if (scv.switch() === xdr.ScValType.scvMap()) {
+        const map = scv.map();
+        const get = (k: string) => map?.find(m => {
+          const key = m.key();
+          return key.switch() === xdr.ScValType.scvSymbol() && key.sym().toString() === k;
+        });
+        const idEntry = get('id');
+        const userEntry = get('user');
+        const productEntry = get('product');
+        const amountEntry = get('amount');
+        const activeEntry = get('active');
+        const toBigIntI128 = (val: any) => {
+          if (!val) return 0n;
+            if (val.switch() === xdr.ScValType.scvI128()) {
+              const parts = val.i128();
+              const hi = BigInt(parts.hi().toString());
+              const lo = BigInt(parts.lo().toString());
+              return (hi << 64n) + lo;
+            }
+            return 0n;
+        };
+        const idVal = idEntry?.val();
+        const amountVal = amountEntry?.val();
+        const activeVal = activeEntry?.val();
+        decoded = {
+          id: idVal ? Number(idVal.u64().toString()) : undefined,
+          user: userEntry?.val()?.address()?.accountId()?.ed25519()?.toString('hex'),
+          product: productEntry?.val()?.str()?.toString(),
+          amountStroops: toBigIntI128(amountVal),
+          amountXlm: stroopsToXlmString(toBigIntI128(amountVal)),
+          active: activeVal ? activeVal.b() : undefined,
+          raw,
+        };
+      }
+    } catch (_) {}
+    return decoded;
   }
 }

@@ -9,6 +9,7 @@ import { StellarUtilityService } from './stellar-utility.service';
 import { LedgerRepository } from '../ledger/ledger.repository';
 import { UsersRepository } from '../users/users.repository';
 import { SorobanService } from '../soroban/soroban.service';
+import { PoliciesRepository } from '../policies/policies.repository';
 import { xlmToStroops } from '../common/stellar-units';
 import { Horizon, TransactionBuilder, Networks, Keypair } from '@stellar/stellar-sdk';
 
@@ -23,10 +24,11 @@ export class AnchorsService {
     private readonly stellarUtil: StellarUtilityService,
     private readonly ledgerRepo: LedgerRepository,
     private readonly usersRepo: UsersRepository,
-    private readonly soroban: SorobanService,
+  private readonly soroban: SorobanService,
+  private readonly policiesRepo: PoliciesRepository,
   ) {}
 
-  async startDeposit(userId: string, amount: number) {
+  async startDeposit(userId: string, amount: number, policyId?: string) {
     // Guarantee user exists (MVP fallback). Ideal: upstream auth ensures creation.
     try {
       const existingUser = await this.usersRepo.findById(userId);
@@ -151,7 +153,7 @@ export class AnchorsService {
         amount,
         status: 'PENDING',
         memo: wallet.public_key.slice(0, 10),
-        extra: { authToken, sep24Id: depositResponse.data.id },
+        extra: { authToken, sep24Id: depositResponse.data.id, policyId },
       });
 
       return { interactiveUrl, anchorTransaction: anchorTx, walletPublicKey: wallet.public_key };
@@ -254,20 +256,19 @@ export class AnchorsService {
     // (Para manter coerência sem mexer no users.repository, fazemos client rápido)
     // TODO: refatorar para UsersRepository método updateBalance
 
-    // Blockchain (Soroban) - best effort; falhas não devem quebrar finalizeDeposit.
-    // Estratégia: usar amount como XLM nativo -> converter para stroops e registrar.
-    const extraUpdates: any = { ...(tx.extra || {}) };
-    try {
-      const stroops = xlmToStroops(tx.amount.toString());
-      const collectRes = await this.soroban.collectPremium(tx.user_id, stroops);
-      extraUpdates.collectPremiumTx = collectRes.txHash;
-      // Produto placeholder MVP e paymentRef = anchorTxId
-      const activateRes = await this.soroban.activatePolicy(tx.user_id, 'DEFAULT_PRODUCT', stroops, `anchor:${tx.id}`);
-      extraUpdates.activatePolicyTx = activateRes.txHash;
-    } catch (chainErr) {
-      extraUpdates.chainError = (chainErr as Error).message;
+    // Removido: auto collectPremium/activatePolicy. Apenas registra depósito.
+    let extra: any = { ...(tx.extra || {}), separatedFunding: true };
+    const policyId = tx.extra?.policyId;
+    if (policyId) {
+      try {
+        const updatedPolicy = await this.policiesRepo.increaseFunding(policyId, tx.amount);
+        extra.policyFundingApplied = true;
+        extra.policyFundingBalance = updatedPolicy?.funding_balance_xlm;
+      } catch (e) {
+        extra.policyFundingError = (e as Error).message;
+      }
     }
-    await this.anchorTxRepo.updateExtra(tx.id, extraUpdates);
+    await this.anchorTxRepo.updateExtra(tx.id, extra);
     return this.anchorTxRepo.findById(tx.id);
   }
 

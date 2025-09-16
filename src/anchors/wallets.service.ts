@@ -16,11 +16,28 @@ export class WalletsService {
     return Buffer.concat([iv, tag, enc]).toString('base64');
   }
 
+  private decryptSecret(payload: string) {
+    const raw = Buffer.from(payload, 'base64');
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const data = raw.subarray(28);
+    const key = crypto.createHash('sha256').update(process.env.WALLET_SECRET_KEY || 'dev-key').digest();
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    const dec = Buffer.concat([decipher.update(data), decipher.final()]);
+    return dec.toString('utf8');
+  }
+
   async getOrCreate(userId: string) {
     const existing = await this.repo.findByUser(userId);
     if (existing) return existing;
     const kp = Keypair.random();
     const encrypted_secret = this.encryptSecret(kp.secret());
     return this.repo.create({ user_id: userId, public_key: kp.publicKey(), encrypted_secret });
+  }
+
+  async getDecryptedSecret(userId: string) {
+    const wallet = await this.getOrCreate(userId);
+    return this.decryptSecret(wallet.encrypted_secret);
   }
 }

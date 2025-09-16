@@ -37,6 +37,16 @@ export class PoliciesRepository {
     return data[0];
   }
 
+  async findById(id: string) {
+    const { data, error } = await this.supabase
+      .from('policies')
+      .select(`*, product:products(*)`)
+      .eq('id', id)
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
   async findAll() {
     const { data, error } = await this.supabase
       .from('policies')

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { Keypair, TransactionBuilder, Networks, Operation, Asset } from '@stellar/stellar-sdk';
-import Server from '@stellar/stellar-sdk';
+import { Keypair, TransactionBuilder, Networks, Operation, Asset, Horizon } from '@stellar/stellar-sdk';
+import axios from 'axios';
 
 interface EnsureTrustlineParams {
   publicKey: string;
@@ -16,9 +16,33 @@ export class StellarUtilityService {
 
   async ensureTrustline(params: EnsureTrustlineParams) {
     const { publicKey, secret, assetCode, assetIssuer } = params;
-    const horizon = new Server(params.horizonUrl || this.defaultHorizon);
-    const account = await horizon.loadAccount(publicKey);
-    const existing = account.balances.find(b => b.asset_code === assetCode && b.asset_issuer === assetIssuer);
+    const horizon = new Horizon.Server(params.horizonUrl || this.defaultHorizon);
+    
+    // XLM (native asset) doesn't need trustline
+    if (assetCode === 'XLM' || !assetIssuer) {
+      return { created: false, message: 'Native asset, no trustline needed' };
+    }
+    
+    let account;
+    try {
+      account = await horizon.loadAccount(publicKey);
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        // Account not found, try to fund it
+        try {
+          await axios.get(`https://friendbot.stellar.org/?addr=${publicKey}`);
+          // Wait a bit for funding to propagate
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          account = await horizon.loadAccount(publicKey);
+        } catch (fundError) {
+          throw new Error(`Account ${publicKey} not found and funding failed: ${fundError.message}`);
+        }
+      } else {
+        throw error;
+      }
+    }
+    
+    const existing = account.balances.find(b => (b as any).asset_code === assetCode && (b as any).asset_issuer === assetIssuer);
     if (existing) return { created: false };
 
     const asset = new Asset(assetCode, assetIssuer);

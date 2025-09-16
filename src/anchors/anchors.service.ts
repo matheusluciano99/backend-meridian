@@ -7,7 +7,7 @@ import { AnchorAuthService } from './anchor-auth.service';
 import { StellarUtilityService } from './stellar-utility.service';
 import { LedgerRepository } from '../ledger/ledger.repository';
 import { UsersRepository } from '../users/users.repository';
-import Server from '@stellar/stellar-sdk';
+import { Horizon } from '@stellar/stellar-sdk';
 
 @Injectable()
 export class AnchorsService {
@@ -23,11 +23,29 @@ export class AnchorsService {
   ) {}
 
   async startDeposit(userId: string, amount: number) {
+    // Guarantee user exists (MVP fallback). Ideal: upstream auth ensures creation.
+    try {
+      const existingUser = await this.usersRepo.findById(userId);
+      if (!existingUser) {
+        await this.usersRepo.create({ id: userId, email: `${userId}@placeholder.local`, kyc_status: 'pending' });
+      }
+    } catch (e) {
+      // If user creation fails, propagate error
+      throw e;
+    }
     const wallet = await this.wallets.getOrCreate(userId);
     const token = await this.anchorAuth.getAuthToken(wallet.public_key);
     const secret = await this.wallets.getDecryptedSecret(userId);
-    const assetCode = process.env.DEPOSIT_ASSET_CODE || 'USDC';
-    const assetIssuer = process.env.DEPOSIT_ASSET_ISSUER || 'GTESTISSUERXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+    const assetCode = process.env.DEPOSIT_ASSET_CODE || 'XLM';
+    const assetIssuer = process.env.DEPOSIT_ASSET_ISSUER || '';
+    
+    // Fund the account on testnet using friendbot
+    try {
+      await this.http.get(`https://friendbot.stellar.org/?addr=${wallet.public_key}`);
+    } catch (e) {
+      // Friendbot might fail, but continue - account might already be funded
+    }
+    
     await this.stellarUtil.ensureTrustline({
       publicKey: wallet.public_key,
       secret,
@@ -105,7 +123,7 @@ export class AnchorsService {
 
   async reconcileDeposits() {
     const horizonUrl = process.env.STELLAR_HORIZON_URL || 'https://horizon-testnet.stellar.org';
-    const server: any = new (Server as any)(horizonUrl); // using any due to mixed import forms
+  const server = new Horizon.Server(horizonUrl);
     const pending = await this.anchorTxRepo.listPendingDeposits();
     const results = [] as any[];
     for (const tx of pending) {
@@ -114,9 +132,15 @@ export class AnchorsService {
         // NOTE: Simplified: we assume anchor sends payment directly; real impl may need memo matching.
         const wallet = await this.wallets.getOrCreate(tx.user_id);
         const payments = await server.payments().forAccount(wallet.public_key).limit(20).order('desc').call();
-        const assetCode = process.env.DEPOSIT_ASSET_CODE || 'USDC';
-        const assetIssuer = process.env.DEPOSIT_ASSET_ISSUER || 'GTESTISSUERXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
-        const match = payments.records.find((p: any) => p.type === 'payment' && p.asset_code === assetCode && p.asset_issuer === assetIssuer && parseFloat(p.amount) >= parseFloat(tx.amount));
+        const assetCode = process.env.DEPOSIT_ASSET_CODE || 'XLM';
+        const assetIssuer = process.env.DEPOSIT_ASSET_ISSUER || '';
+        const match = payments.records.find((p: any) => {
+          if (assetCode === 'XLM') {
+            return p.type === 'payment' && p.asset_type === 'native' && parseFloat(p.amount) >= parseFloat(tx.amount);
+          } else {
+            return p.type === 'payment' && p.asset_code === assetCode && p.asset_issuer === assetIssuer && parseFloat(p.amount) >= parseFloat(tx.amount);
+          }
+        });
         if (match) {
           const finalized = await this.finalizeDeposit(tx.id);
           results.push({ id: tx.id, finalized: true });

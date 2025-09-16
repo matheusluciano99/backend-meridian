@@ -31,6 +31,12 @@ export class UsersRepository {
     return data;
   }
 
+  async findById(id: string) {
+    const { data, error } = await this.supabase.from('users').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
   async updateKycStatus(id: string, status: string) {
     const { data, error } = await this.supabase
       .from('users')

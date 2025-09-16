@@ -59,4 +59,15 @@ export class AnchorTransactionsRepository {
     if (error) throw error;
     return data;
   }
+
+  async listPendingDeposits() {
+    const { data, error } = await this.supabase
+      .from('anchor_transactions')
+      .select('*')
+      .eq('type', 'deposit')
+      .in('status', ['PENDING', 'PENDING_TRUST', 'PENDING_USER_TRANSFER_START'])
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data;
+  }
 }

@@ -8,6 +8,8 @@ import { WalletsService } from './wallets.service';
 import { AnchorTransactionsRepository } from './anchor-transactions.repository';
 import { AnchorAuthService } from './anchor-auth.service';
 import { StellarUtilityService } from './stellar-utility.service';
+import { LedgerRepository } from '../ledger/ledger.repository';
+import { UsersRepository } from '../users/users.repository';
 
 @Module({
   imports: [HttpModule],
@@ -20,6 +22,8 @@ import { StellarUtilityService } from './stellar-utility.service';
     AnchorTransactionsRepository,
     AnchorAuthService,
     StellarUtilityService,
+    LedgerRepository,
+    UsersRepository,
   ],
   exports: [AnchorsService],
 })

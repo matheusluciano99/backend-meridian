@@ -36,6 +36,36 @@ export class ClaimsRepository {
     return data[0];
   }
 
+  async findById(id: string) {
+    const { data, error } = await this.supabase
+      .from('claims')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  async updateStatus(id: string, status: string) {
+    const { data, error } = await this.supabase
+      .from('claims')
+      .update({ status })
+      .eq('id', id)
+      .select();
+    if (error) throw error;
+    return data[0];
+  }
+
+  async updateApprovedAmount(id: string, approvedAmount: number) {
+    const { data, error } = await this.supabase
+      .from('claims')
+      .update({ approved_amount: approvedAmount })
+      .eq('id', id)
+      .select();
+    if (error) throw error;
+    return data[0];
+  }
+
   async findAllByUser(userId: string) {
     const { data, error } = await this.supabase
       .from('claims')

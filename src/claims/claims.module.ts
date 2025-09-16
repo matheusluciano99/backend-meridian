@@ -3,8 +3,10 @@ import { ClaimsController } from './claims.controller';
 import { ClaimsService } from './claims.service';
 import { ClaimsRepository } from './claims.repository';
 import { PoliciesRepository } from '../policies/policies.repository';
+import { SorobanModule } from '../soroban/soroban.module';
 
 @Module({
+  imports: [SorobanModule],
   controllers: [ClaimsController],
   providers: [ClaimsService, ClaimsRepository, PoliciesRepository],
 })

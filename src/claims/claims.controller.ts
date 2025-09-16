@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Query } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, Param } from '@nestjs/common';
 import { ClaimsService } from './claims.service';
 
 interface CreateClaimDto {
@@ -8,6 +8,10 @@ interface CreateClaimDto {
   description: string;
   incidentDate: string; // ISO date
   claimAmount: number;
+}
+
+interface ApproveClaimDto {
+  approvedAmount: number;
 }
 
 @Controller('claims')
@@ -24,6 +28,11 @@ export class ClaimsController {
       body.incidentDate,
       body.claimAmount,
     );
+  }
+
+  @Post(':id/approve')
+  approve(@Param('id') id: string, @Body() body: ApproveClaimDto) {
+    return this.claimsService.approveClaim(id, body.approvedAmount);
   }
 
   @Get()
